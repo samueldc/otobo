@@ -1,3 +1,4 @@
+.vagrant
 .gitconfig
 var/log/error_log
 var/log/ssl_request_log
