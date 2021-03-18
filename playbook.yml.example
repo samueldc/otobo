@@ -1,0 +1,582 @@
+---
+- name: configure local machine for me
+  hosts: local
+  remote_user: "{{ username }}"
+  become: yes
+  vars_prompt:
+    
+    - name: webdav_user
+      prompt: Webdav user
+      private: no
+    
+    - name: webdav_password
+      prompt: Webdav password
+
+  tasks:
+  
+  - name: ensure vim is installed
+    apt:
+      name: vim
+      state: present
+  
+  - name: ensure curl is installed
+    apt:
+      name: curl
+      state: present
+  
+  - name: mkdir /mnt/nas
+    file:
+      path: /mnt/nas
+      state: directory
+
+  - name: ensure nfs client is installed
+    apt:
+      name: nfs-common
+      state: present
+  
+  - name: mount my nas
+    mount:
+      src: 192.168.1.253:/Dados
+      path: /mnt/nas
+      fstype: nfs
+      opts: user,rw,exec,auto,vers=3,local_lock=all,_netdev
+      state: mounted
+  
+  - name: install davfs2
+    apt:
+      name: davfs2
+      state: present
+
+  - name: setuid for davfs
+    file:
+      path: /sbin/mount.davfs
+      mode: u+s
+
+  - name: mkdir /mnt/nextcloud-camara
+    file:
+      path: /mnt/nextcloud-camara
+      state: directory
+      mode: '0775'
+      owner: "{{ username }}"
+      group: "{{ username }}"
+
+  - name: creates davfs2 user configuration folder
+    file:
+      path: "/home/{{ username }}/.davfs2"
+      state: directory
+      mode: '0770'
+      owner: "{{ username }}"
+      group: "{{ username }}"
+
+  - name: creates davfs2 secrets file
+    copy:
+      src: /etc/davfs2/secrets
+      remote_src: yes
+      dest: "/home/{{ username }}/.davfs2/secrets"
+      owner: "{{ username }}"
+      group: "{{ username }}"
+      mode: '0600'
+
+  - name: edit secrets file
+    lineinfile:
+      path: "/home/{{ username }}/.davfs2/secrets"
+      line: "https://drive.camara.leg.br/remote.php/webdav/ {{ webdav_user }} {{ webdav_password }}"
+      insertafter: EOF
+      state: present
+
+  - name: edit /etc/davfs2/davfs2.conf and add use_locks 0
+    lineinfile:
+      path: /etc/davfs2/davfs2.conf
+      line: use_locks 0
+      insertafter: EOF
+      state: present
+
+  - name: configure davfs2 group
+    user:
+      append: yes
+      groups: davfs2
+      name: "{{ username }}"
+      state: present
+
+  - name: fstab my webdav nextcloud
+    mount:
+      src: https://drive.camara.leg.br/remote.php/webdav/
+      path: /mnt/nextcloud-camara
+      fstype: davfs
+      opts: "user,rw,auto,uid={{ username }},_netdev"
+      state: present
+
+#  - name: mount my webdav nextcloud
+#    become: yes
+#    become_user: "{{ username }}"
+#    command: 
+#      cmd: mount /mnt/nextcloud-camara
+#      creates: /mnt/nextcloud-camara/.ansible-created
+#      warn: no
+#
+  - name: install rawtherapee
+    apt: 
+      name: rawtherapee
+      state: present
+
+  - name: install inkscape
+    apt: 
+      name: inkscape
+      state: present
+
+  - name: install gimp
+    apt: 
+      name: gimp
+      state: present
+
+  - name: install steam
+    apt:
+      name: steam
+      state: present
+
+  - name: install google chrome
+    apt:
+      deb: https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+
+  - name: install zoom
+    apt:
+      deb:  https://zoom.us/client/latest/zoom_amd64.deb
+
+  - name: install notepadqq
+    apt:
+      name: notepadqq
+      state: present
+
+#  - name: download camunda
+#    become: yes
+#    become_user: "{{ username }}"
+#    get_url:
+#      url: https://downloads.camunda.cloud/release/camunda-modeler/nightly/camunda-modeler-nightly-linux-x64.tar.gz
+#      dest: /home/samueldc/Downloads
+#      group: "{{ username }}"
+#      owner: "{{ username }}"
+#      mode: '0660'
+#
+#  - name: extract camunda
+#    command: 
+#      cmd: "tar xvfz /home/{{ username }}/Downloads/camunda-modeler-nightly-linux-x64.tar.gz --one-top-level=camunda --strip-components=1 -C /opt"
+#
+  - name: download and extract camunda
+    unarchive:
+      src: https://downloads.camunda.cloud/release/camunda-modeler/nightly/camunda-modeler-nightly-linux-x64.tar.gz
+      dest: /opt
+      remote_src: yes
+      extra_opts: 
+      - --one-top-level=camunda
+      - --strip-components=1
+      creates: /opt/camunda/camunda-modeler
+
+  - name: add microsoft key
+    apt_key:
+      url: https://packages.microsoft.com/keys/microsoft.asc
+      keyring: /etc/apt/trusted.gpg.d/packages.microsoft.gpg
+      state: present
+
+  - name: update apt cache
+    apt:
+      update_cache: yes
+
+  - name: add microsoft repo
+    apt_repository:
+      repo: deb [arch=amd64] https://packages.microsoft.com/repos/code stable main
+      state: present
+
+  - name: install vscode
+    apt:
+      name: code
+      state: present
+
+  - name: install insomnia
+    snap:
+      name: insomnia-designer
+
+  - name: install zsh
+    apt: 
+      name: zsh
+      state: present
+
+  - name: return zsh path
+    shell: which zsh
+    register: zsh_path
+    check_mode: no
+
+  - name: configure zsh user shell
+    user:
+      name: "{{ username }}"
+      state: present
+      shell: "{{ zsh_path.stdout }}"
+
+  - name: populate .zshrc with recommended settings
+    copy:
+      src: /etc/zsh/newuser.zshrc.recommended
+      remote_src: yes
+      dest: "/home/{{ username }}/.zshrc"
+      owner: "{{ username }}"
+      group: "{{ username }}"
+      mode: '0600'
+
+  - name: install oh-my-zsh
+    become: yes
+    become_user: "{{ username }}"
+    shell: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    args:
+      creates: "/home/{{ username }}/.oh-my-zsh/oh-my-zsh.sh"
+
+  - name: install zsh extras
+    apt: 
+      name: 
+      - powerline
+      - fonts-powerline
+      - zsh-theme-powerlevel9k
+      - zsh-syntax-highlighting
+      state: present
+
+  - name: configure powerlevel9k zsh theme
+    lineinfile:
+      path: "/home/{{ username }}/.zshrc"
+      line: source /usr/share/powerlevel9k/powerlevel9k.zsh-theme
+      insertafter: EOF
+      state: present
+
+  - name: configure zsh syntax highlighting
+    lineinfile:
+      path: "/home/{{ username }}/.zshrc"
+      line: source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+      insertafter: EOF
+      state: present
+
+  - name: configure xhost for gparted
+    lineinfile:
+      path: "/home/{{ username }}/.zshrc"
+      line: "xhost +local:"
+      insertafter: EOF
+      state: present
+
+  - name: install spaceship prompt
+    become: yes
+    become_user: "{{ username }}"
+    shell: "git clone https://github.com/denysdovhan/spaceship-prompt.git /home/{{ username }}/.oh-my-zsh/themes/spaceship-prompt"
+    args:
+      creates: "/home/{{ username }}/.oh-my-zsh/themes/spaceship-prompt/spaceship.zsh-theme"
+
+  - name: configure spaceship prompt
+    become: yes
+    become_user: "{{ username }}"
+    shell: "ln -s /home/{{ username }}/.oh-my-zsh/themes/spaceship-prompt/spaceship.zsh-theme /home/samueldc/.oh-my-zsh/themes/spaceship.zsh-theme"
+    args:
+      creates: "/home/{{ username }}/.oh-my-zsh/themes/spaceship.zsh-theme"
+
+  - name: configure spaceship theme
+    lineinfile:
+      path: "/home/{{ username }}/.zshrc"
+      regexp: '^ZSH_THEME=.*$'
+      line: 'ZSH_THEME="spaceship"'
+      state: present
+
+  - name: configure spaceship preferences
+    blockinfile:
+      path: "/home/{{ username }}/.zshrc"
+      marker: "# {mark} SPACESHIP PREFERENCES"
+      insertafter: EOF
+      block: |
+        SPACESHIP_PROMPT_ORDER=(
+          user          # Username section
+          dir           # Current directory section
+          host          # Hostname section
+          git           # Git section (git_branch + git_status)
+          hg            # Mercurial section (hg_branch  + hg_status)
+          exec_time     # Execution time
+          line_sep      # Line break
+          vi_mode       # Vi-mode indicator
+          jobs          # Background jobs indicator
+          exit_code     # Exit code section
+          char          # Prompt character
+        )
+        SPACESHIP_USER_SHOW=always
+        SPACESHIP_PROMPT_ADD_NEWLINE=true
+        SPACESHIP_CHAR_SYMBOL="❯"
+        SPACESHIP_CHAR_SUFFIX=" "
+
+  - name: reads zsh config file
+    become: yes
+    become_user: "{{ username }}"
+    shell: "cat /home/{{ username }}/.zshrc"
+    register: zshrc_contents
+
+  - name: install zinit
+    become: yes
+    become_user: "{{ username }}"
+    shell: sh -c "$(curl -fsSL https://raw.githubusercontent.com/zdharma/zinit/master/doc/install.sh)"
+    when: "'Added by Zinit' not in lookup('file', '/home/{{ username }}/.zshrc')"
+#    when: zshrc_contents.stdout is not search("Added by Zinit")
+
+  - name: reload shell
+    become: yes
+    become_user: "{{ username }}"
+    shell: "source /home/{{ username }}/.zshrc"
+    args:
+      executable: "{{ zsh_path.stdout }}"
+
+  - name: compile zinit
+    become: yes
+    become_user: "{{ username }}"
+    shell: zinit self-update
+    args:
+      creates: "/home/{{ username }}/.zinit/completions"
+
+  - name: install zinit plugins
+    blockinfile:
+      path: "/home/{{ username }}/.zshrc"
+      marker: "# {mark} ZINIT PLUGINS"
+      insertafter: EOF
+      block: |
+        zinit light zdharma/fast-syntax-highlighting
+        zinit light zsh-users/zsh-autosuggestions
+        zinit light zsh-users/zsh-completions
+
+#  - name: configure webdav for mounting
+#    lineinfile:
+#      path: "/home/{{ username }}/.xinitrc"
+#      line: "mount /mnt/nextcloud-camara"
+#      insertafter: EOF
+#      state: present
+#      create: yes
+#
+  - name: configure webdav for mounting
+    blockinfile:
+      path: "/home/{{ username }}/.config/autostart/mount.desktop"
+      marker: "# {mark} MOUNT WEBDAV"
+      insertafter: EOF
+      create: yes
+      block: |
+        [Desktop Entry]
+        Type=Application
+        Exec=mount /mnt/nextcloud-camara
+        Hidden=false
+        NoDisplay=false
+        X-GNOME-Autostart-enabled=true
+        Name[en_US]=Mount WebDav
+        Name=Mount WebDav
+        Comment[en_US]=
+        Comment=
+
+#  - name: configure vscode settings for zsh
+
+  - name: configure function keys to work only when fn is pressed
+    lineinfile:
+      path: /etc/modprobe.d/hid_apple.conf
+      line: options hid_apple fnmode=2
+      insertafter: EOF
+      state: present
+      create: yes
+    register: result_fn
+
+  - name: configure bluetooth module to work with xbox on controller
+    lineinfile:
+      path: /etc/modprobe.d/xbox-one-controller.conf
+      line: options bluetooth disable_ertm=1
+      insertafter: EOF
+      state: present
+      create: yes
+    register: result_xbox
+
+  - name: reload kernel modules
+    shell: update-initramfs -u -k all
+    when: result_fn.changed or result_xbox.changed
+
+  - name: configure cedilla
+    lineinfile:
+      path: /etc/environment
+      line: GTK_IM_MODULE=cedilla
+      insertafter: EOF
+      state: present
+
+  - name: install video4linux utilities
+    apt: 
+      name: v4l-utils
+      state: present
+
+  - name: configure udev rules for logitech c922 webcam
+    blockinfile:
+      path: /etc/udev/rules.d/98-logitech-c922.rules
+      mode: '0644'
+      marker: "# {mark} UDEV RULES FOR WEBCAM"
+      insertafter: EOF
+      create: yes
+      block: |
+        SUBSYSTEM=="video4linux", KERNEL=="video[0-9]*", ATTRS{product}=="C922 Pro Stream Webcam", ATTR{index}=="0", RUN+="/usr/bin/v4l2-ctl -d $devnode --set-ctrl white_balance_temperature_auto=0"
+        SUBSYSTEM=="video4linux", KERNEL=="video[0-9]*", ATTRS{product}=="C922 Pro Stream Webcam", ATTR{index}=="0", RUN+="/usr/bin/v4l2-ctl -d $devnode --set-ctrl exposure_auto=1"
+    register: result_udev
+
+  - name: configure udev rules for logitech c922 webcam part 2
+    blockinfile:
+      path: /etc/udev/rules.d/99-logitech-c922.rules
+      mode: '0644'
+      marker: "# {mark} UDEV RULES FOR WEBCAM PART 2"
+      insertafter: EOF
+      create: yes
+      block: |
+        SUBSYSTEM=="video4linux", KERNEL=="video[0-9]*", ATTRS{product}=="C922 Pro Stream Webcam", ATTR{index}=="0", RUN+="/usr/bin/v4l2-ctl -d $devnode --set-ctrl exposure_absolute=600"
+        SUBSYSTEM=="video4linux", KERNEL=="video[0-9]*", ATTRS{product}=="C922 Pro Stream Webcam", ATTR{index}=="0", RUN+="/usr/bin/v4l2-ctl -d $devnode --set-ctrl white_balance_temperature=2000"
+    register: result_udev
+
+  - name: reload udev rules
+    shell: udevadm control --reload
+    when: result_udev.changed
+
+  - name: setuid for udevadm
+    file:
+      path: /usr/bin/udevadm
+      mode: u+s
+
+  - name: trigger webcam udev rules
+    shell: udevadm trigger --name-match=/dev/video0
+
+  - name: configure to trigger webcam udev rules at startup
+    blockinfile:
+      path: "/home/{{ username }}/.config/autostart/trigger-webcam-udev-rules.desktop"
+      marker: "# {mark} TRIGGER WEBCAM UDEV RULES"
+      insertafter: EOF
+      create: yes
+      block: |
+        [Desktop Entry]
+        Type=Application
+        Exec=udevadm trigger --name-match=/dev/video0
+        Hidden=false
+        NoDisplay=false
+        X-GNOME-Autostart-enabled=true
+        Name[en_US]=Trigger Webcam Udev Rules
+        Name=Trigger Webcam Udev Rules
+        Comment[en_US]=
+        Comment=
+
+  - name: install pksc11 dependencies
+    apt: 
+      name: 
+      - libjbig0
+      - libtiff5
+      - fontconfig-config
+      - libfontconfig1
+      - libwxbase3.0-0v5
+      - libwxgtk3.0-gtk3-0v5
+      - libpcsclite1
+      - libccid
+      - pcscd
+      - libnss3
+      - libnss3-tools
+      state: present
+
+  - name: create temporary safenet directory
+    tempfile:
+      state: directory
+      suffix: safenet
+    register: safenet_dir
+    check_mode: no
+
+  - name: download and extract safenet client
+    unarchive:
+      src: http://repositorio.serpro.gov.br/drivers/safenet/linux/SafenetAuthenticationClient-BR-10.3_Linux_Ubuntu-RedHat(32-64bits).zip
+      dest: "{{ safenet_dir.path }}"
+      remote_src: yes
+
+  - name: install safenet client
+    apt:
+      deb: "{{ safenet_dir.path }}/SafenetAuthenticationClient-BR-10.0.37-0_amd64.deb"
+
+  - name: create a symbolic link to libcrypto
+    file:
+      src: /usr/lib/x86_64-linux-gnu/libcrypto.so.1.1
+      dest: /usr/lib/libcrypto.so.6
+      state: link
+
+  - name: verify pkcs11 for chrome
+    become: yes
+    become_user: "{{ username }}"
+    shell: modutil -dbdir sql:/home/{{ username }}/.pki/nssdb/ -list | grep "Safenet Token"
+    register: result_pkcs11
+    ignore_errors: true
+    check_mode: no
+
+  - name: configure pkcs11 for chrome
+    become: yes
+    become_user: "{{ username }}"
+    shell: modutil -dbdir sql:/home/{{ username }}/.pki/nssdb/ -add "Safenet Token" -libfile /usr/lib/libeToken.so
+    when: "'Safenet Token' not in result_pkcs11.stdout"
+
+  - name: create temporary canon driver directory
+    tempfile:
+      state: directory
+      suffix: canon_driver
+    register: canon_driver_dir
+    check_mode: no
+
+  - name: download and extract canon printer driver
+    unarchive:
+      src: https://gdlp01.c-wss.com/gds/1/0100007131/01/cnijfilter2-5.30-1-deb.tar.gz
+      dest: "{{ canon_driver_dir.path }}"
+      remote_src: yes
+      extra_opts: 
+      - --strip-components=1
+
+  - name: install canon printer driver
+    apt:
+      deb: "{{ canon_driver_dir.path }}/packages/cnijfilter2_5.30-1_amd64.deb"
+
+  - name: install canon printer
+    become: yes
+    become_user: "{{ username }}"
+    expect:
+      command: "{{ canon_driver_dir.path }}/install.sh"
+      echo: yes
+      responses:
+        .*: "1"
+    args:
+      creates: /etc/cups/ppd/G3000LAN.ppd
+
+  - name: download and extract canon scanner driver
+    unarchive:
+      src: https://gdlp01.c-wss.com/gds/4/0100007134/01/scangearmp2-3.30-1-deb.tar.gz
+      dest: "{{ canon_driver_dir.path }}"
+      remote_src: yes
+      extra_opts: 
+      - --strip-components=1
+
+  - name: install vagrant
+    apt:
+      deb: https://releases.hashicorp.com/vagrant/2.2.14/vagrant_2.2.14_x86_64.deb
+
+  - name: install other needed packages for vagrant
+    apt:
+      name: 
+      - gcc
+      - build-essential
+
+  - name: install qemu kvm
+    apt:
+      name:
+      - qemu
+      - libvirt-daemon-system
+      - libvirt-clients
+      - bridge-utils
+      - virt-manager
+      - libvirt-dev
+      state: present
+
+  - name: add user to qemu kvm groups
+    user:
+      append: yes
+      groups: 
+      - libvirt
+      - kvm
+      name: "{{ username }}"
+      state: present
+
+  - name: install vagrant plugin for libvirt
+    shell: CONFIGURE_ARGS='with-libvirt-include=/usr/include/libvirt with-libvirt-lib=/usr/lib' vagrant plugin install vagrant-libvirt
+
+

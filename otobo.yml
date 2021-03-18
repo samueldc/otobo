@@ -1,0 +1,23 @@
+---
+- name: configure local machine for me
+  hosts: all
+  become: yes
+
+  tasks:
+  
+  - name: disable ubuntu apparmor
+    service:
+      name: apparmor
+      enabled: no
+      state: stopped
+
+  - name: download, unpack and install otobo
+    unarchive:
+      src: https://ftp.otobo.org/pub/otobo/otobo-latest-10.0.tar.gz
+      dest: /opt/otobo
+      remote_src: yes
+      extra_opts: 
+      - --strip-components=1
+      creates: /opt/otobo/Kernel
+
+  
