@@ -20,4 +20,40 @@
       - --strip-components=1
       creates: /opt/otobo/Kernel
 
+  - name: install perl modules
+    shell: sh -c "$(perl /opt/otobo/bin/otobo.CheckModules.pl -inst)"
+
+  - name: configure otobo user
+    user:
+      append: yes
+      comment: OTOBO user
+      group: otobo
+      groups: www-data 
+      home: /opt/otobo
+      name: otobo
+      shell: /bin/bash
+      state: present
+      system: yes
+
+  - name: activate the default configuration file
+    copy:
+      src: /opt/otobo/Kernel/Config.pm.dist 
+      dest: /opt/otobo/Kernel/Config.pm
+
+  - name: install apache web server
+    apt:
+      name:
+      - apache2
+      - libapache2-mod-perl
+      state: present
+
+  - name: activate apache modules
+    shell: a2enmod perl && a2enmod deflate && a2enmod filter && a2enmod headers
+
+  - name: configure apache for otobo
+    file:
+      src: /opt/otobo/scripts/apache2-httpd.include.conf
+      path: /etc/apache2/sites-enabled/zzz_otobo.conf
+      state: link
+
   
