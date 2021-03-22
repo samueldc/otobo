@@ -1,3 +1,4 @@
+.db
 .vagrant
 .gitconfig
 var/log/error_log

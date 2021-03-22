@@ -3,6 +3,12 @@
   hosts: all
   become: yes
 
+  vars_prompt:
+    
+    - name: mysql_password
+      prompt: MySQL password
+      default: root
+
   tasks:
   
   - name: disable ubuntu apparmor
@@ -11,51 +17,126 @@
       enabled: no
       state: stopped
 
-  - name: download, unpack and install otobo
-    unarchive:
-      src: https://ftp.otobo.org/pub/otobo/otobo-latest-10.0.tar.gz
-      dest: /opt/otobo
-      remote_src: yes
-      extra_opts: 
-      - --strip-components=1
-      creates: /opt/otobo/Kernel
-
-  - name: install perl modules
-    shell: sh -c "$(perl /opt/otobo/bin/otobo.CheckModules.pl -inst)"
-
-  - name: configure otobo user
-    user:
-      append: yes
-      comment: OTOBO user
-      group: otobo
-      groups: www-data 
-      home: /opt/otobo
-      name: otobo
-      shell: /bin/bash
-      state: present
-      system: yes
-
-  - name: activate the default configuration file
-    copy:
-      src: /opt/otobo/Kernel/Config.pm.dist 
-      dest: /opt/otobo/Kernel/Config.pm
-
-  - name: install apache web server
-    apt:
-      name:
-      - apache2
-      - libapache2-mod-perl
-      state: present
-
-  - name: activate apache modules
-    shell: a2enmod perl && a2enmod deflate && a2enmod filter && a2enmod headers
-
-  - name: configure apache for otobo
-    file:
-      src: /opt/otobo/scripts/apache2-httpd.include.conf
-      path: /etc/apache2/sites-enabled/zzz_otobo.conf
-      state: link
-
-  - name: restart apache
-    service: 
+  - name: install gnupg
+    apt: 
+      name: gnupg
   
+  - name: pre configure mysql apt config repo distro
+    debconf:
+      name: mysql-apt-config
+      question: mysql-apt-config/repo-distro
+      value: debian
+      vtype: select
+
+  - name: pre configure mysql apt config select server
+    debconf:
+      name: mysql-apt-config
+      question: mysql-apt-config/select-server
+      value: mysql-5.7
+      vtype: select
+
+  - name: pre configure mysql apt config select product
+    debconf:
+      name: mysql-apt-config
+      question: mysql-apt-config/select-product
+      value: Ok
+      vtype: select
+
+  - name: pre configure mysql community server root pass
+    debconf:
+      name: mysql-community-server
+      question: mysql-community-server/root-pass
+      value: "{{ mysql_password }}"
+      vtype: password
+    no_log: true
+
+  - name: pre configure mysql community server re root pass
+    debconf:
+      name: mysql-community-server
+      question: mysql-community-server/re-root-pass
+      value: "{{ mysql_password }}"
+      vtype: password
+    no_log: true
+
+#  - name: pre configure mysql community server data dir
+#    debconf:
+#      name: mysql-community-server
+#      question: mysql-community-server/data-dir
+#      value: 
+#      vtype: note
+#
+#  - name: set selections for mysql-apt-config
+#    shell: |
+#      debconf-set-selections <<< 'mysql-apt-config mysql-apt-config/repo-distro select debian'
+#      debconf-set-selections <<< 'mysql-apt-config mysql-apt-config/select-server select mysql-5.7'
+#      debconf-set-selections <<< 'mysql-apt-config mysql-apt-config/select-product select Ok'
+#      debconf-set-selections <<< 'mysql-community-server mysql-community-server/root-pass password {{ mysql_password }}'
+#      debconf-set-selections <<< 'mysql-community-server mysql-community-server/re-root-pass password {{ mysql_password }}'
+#      debconf-set-selections <<< 'mysql-community-server mysql-community-server/data-dir'
+#
+  - name: install mysql-apt-config
+    apt: 
+      deb: https://dev.mysql.com/get/mysql-apt-config_0.8.16-1_all.deb
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+
+  - name: update apt cache
+    apt:
+      update_cache: yes
+
+  - name: install mysql-server
+    apt: 
+      name: mysql-server
+      state: present
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+
+  - name: install expect module dependencies
+    apt:
+      name: 
+      - python3-pip
+      - virtualenv
+
+  - name: install expect python dependecies
+    pip:
+      name: 
+      - pexpect
+      - setuptools
+
+  - name: change mysql root authentication to native
+    expect: 
+      command: mysql -u root -p -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{{ mysql_password }}';"
+      responses:
+        (?i)password: "{{ mysql_password }}"
+#    no_log: true
+
+#  - name: install pymysql
+#    apt:
+#      name: python-pymysql
+#
+  - name: configure mysqld variables
+    blockinfile:
+      path: /etc/mysql/conf.d/mysql.cnf
+      marker: "# {mark} MYSQLD VARIABLES"
+      insertafter: EOF
+      block: |
+        [mysqld]
+        max_allowed_packet = 64M
+        innodb_log_file_size = 256M
+        query_cache_size = 32M
+
+  - name: configure mysqldump variables
+    blockinfile:
+      path: /etc/mysql/conf.d/mysqldump.cnf
+      marker: "# {mark} MYSQLDUMP VARIABLES"
+      insertafter: EOF
+      block: |
+        max_allowed_packet = 64M
+
+  - name: restart mysql service
+    service:
+      name: mysql
+      enabled: yes
+      state: restarted
+
+#  - name: mysql_secure_installation

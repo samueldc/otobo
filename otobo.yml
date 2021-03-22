@@ -27,7 +27,6 @@
     user:
       append: yes
       comment: OTOBO user
-      group: otobo
       groups: www-data 
       home: /opt/otobo
       name: otobo
@@ -39,12 +38,13 @@
     copy:
       src: /opt/otobo/Kernel/Config.pm.dist 
       dest: /opt/otobo/Kernel/Config.pm
+      remote_src: yes
 
   - name: install apache web server
     apt:
       name:
       - apache2
-      - libapache2-mod-perl
+      - libapache2-mod-perl2
       state: present
 
   - name: activate apache modules
@@ -55,7 +55,11 @@
       src: /opt/otobo/scripts/apache2-httpd.include.conf
       path: /etc/apache2/sites-enabled/zzz_otobo.conf
       state: link
+      remote_src: yes
 
   - name: restart apache
-    service: 
+    service:
+      name: apache2
+      enabled: yes
+      state: restarted
   

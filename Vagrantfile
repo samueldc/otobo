@@ -12,17 +12,15 @@ Vagrant.configure("2") do |config|
 
   config.vagrant.plugins = "vagrant-libvirt"
 
-  config.vm.box = "generic/ubuntu2004"
-
-  config.vm.network "private_network", type: "dhcp"
-
   config.vm.provider :libvirt do |lv|
     lv.driver = "kvm"
     lv.memory = "2048"
   end
   
   config.vm.define "otobo", primary: true do |app|
-    app.vm.network "forwarded_port", guest: 80, host: 8081, host_ip: "127.0.0.1"
+    app.vm.box = "generic/ubuntu2004"
+    app.vm.network "private_network", ip: "10.0.0.11"
+    app.vm.network "forwarded_port", guest: 80, host: 8081
     app.vm.hostname = "otobo.localhost"
     app.vm.synced_folder "./", "/opt/otobo"
     app.vm.provision "ansible" do |ansible|
@@ -30,12 +28,17 @@ Vagrant.configure("2") do |config|
     end
   end  
   
-  config.vm.define "otobo_database" do |db|
+  config.vm.define "otobo-db" do |db|
+    db.vm.box = "debian/buster64"
+    db.vm.network "private_network", ip: "10.0.0.101"
     # db.vm.network "forwarded_port", guest: 3306, host: 3316, host_ip: "127.0.0.1"
     db.vm.hostname = "otobo-db.localhost"
-    db.vm.synced_folder ".db/", "/var/lib/mysql"
     db.vm.provision "ansible" do |ansible|
       ansible.playbook = "otobo-db.yml"
+      ansible.host_vars = {
+        "otobo-db" => {"ansible_python_interpreter" => "/usr/bin/python3"}
+      }
+      ansible.verbose = "-vvv"
     end
   end
 
